@@ -170,8 +170,23 @@ func parseSignedData(data []byte) (*PKCS7, error) {
 	}
 	// Compound octet string
 	if compound.IsCompound {
-		if _, err = asn1.Unmarshal(compound.Bytes, &content); err != nil {
+		bytesToMarshal := compound.Bytes
+		restOfCompound, err := asn1.Unmarshal(bytesToMarshal, &content)
+		if err != nil {
 			return nil, err
+		}
+		for {
+			if len(restOfCompound) > 0 {
+				var contentPart []byte
+				bytesToMarshal = restOfCompound
+				restOfCompound, err = asn1.Unmarshal(bytesToMarshal, &contentPart)
+				if err != nil {
+					return nil, err
+				}
+				content = append(content, contentPart...)
+			} else {
+				break
+			}
 		}
 	} else {
 		// assuming this is tag 04
