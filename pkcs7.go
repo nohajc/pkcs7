@@ -224,21 +224,30 @@ func parseEnvelopedData(data []byte) (*PKCS7, error) {
 }
 
 // Verify checks the signatures of a PKCS7 object
-// WARNING: Verify does not check signing time or verify certificate chains at
-// this time.
-func (p7 *PKCS7) Verify() (err error) {
+// WARNING: Verify does not check signing time
+func (p7 *PKCS7) Verify(opts *x509.VerifyOptions) (err error) {
 	if len(p7.Signers) == 0 {
 		return errors.New("pkcs7: Message has no signers")
 	}
 	for _, signer := range p7.Signers {
-		if err := verifySignature(p7, signer); err != nil {
+		cert := getCertFromCertsByIssuerAndSerial(p7.Certificates, signer.IssuerAndSerialNumber)
+		if cert == nil {
+			return errors.New("pkcs7: No certificate for signer")
+		}
+		if err := verifySignature(p7, signer, cert); err != nil {
+			return err
+		}
+		if opts == nil {
+			continue
+		}
+		if _, err := cert.Verify(*opts); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func verifySignature(p7 *PKCS7, signer signerInfo) error {
+func verifySignature(p7 *PKCS7, signer signerInfo, cert *x509.Certificate) error {
 	signedData := p7.Content
 	if len(signer.AuthenticatedAttributes) > 0 {
 		// TODO(fullsailor): First check the content type match
@@ -268,10 +277,6 @@ func verifySignature(p7 *PKCS7, signer signerInfo) error {
 		if err != nil {
 			return err
 		}
-	}
-	cert := getCertFromCertsByIssuerAndSerial(p7.Certificates, signer.IssuerAndSerialNumber)
-	if cert == nil {
-		return errors.New("pkcs7: No certificate for signer")
 	}
 
 	oid := signer.DigestAlgorithm.Algorithm
